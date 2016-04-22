@@ -10,6 +10,7 @@ from django.core.exceptions import ValidationError
 from django.core.urlresolvers import NoReverseMatch
 from django.utils.translation import get_language
 from django.utils.translation import ugettext_lazy as _
+from django.db.models import QuerySet
 
 from cms.utils import get_cms_setting
 from cms.utils.django_load import load
@@ -96,7 +97,7 @@ class MenuPool(object):
         self.discovered = True
         self._expanded = False
 
-    def _expand_menus(self):
+    def _expand_menus(self, site_id=None):
         """
         Expands the menu_pool by converting any found CMSAttachMenu entries to
         one entry for each instance they are attached to. and instantiates menus
@@ -110,6 +111,8 @@ class MenuPool(object):
 
         if self._expanded:
             return
+        if not site_id:
+            site_id = Site.objects.get_current().pk
         expanded_menus = {}
         for menu_class_name, menu_cls in self.menus.items():
             # In order to be eligible for "expansion", the menu_cls must, in
@@ -129,6 +132,10 @@ class MenuPool(object):
                 if not instances:
                     expanded_menus[menu_class_name] = menu_cls()
                 else:
+                    # Filter by site if we get pages as a queryset
+                    # optimize and avoid NoReverseMatch errors in menus
+                    if isinstance(instances, QuerySet):
+                        instances = instances.filter(site__id=site_id)
                     for instance in instances:
                         namespace = "{0}:{1}".format(
                             menu_class_name, instance.pk)
@@ -211,7 +218,7 @@ class MenuPool(object):
                 the node is put at the bottom of the list
         """
         # Before we do anything, make sure that the menus are expanded.
-        self._expand_menus()
+        self._expand_menus(site_id)
         # Cache key management
         lang = get_language()
         prefix = getattr(settings, "CMS_CACHE_PREFIX", "menu_cache_")
